@@ -13,6 +13,8 @@ knitr::opts_chunk$set(echo = FALSE, error = FALSE, message = FALSE)
 ```
 
 
+
+
 ```{r eval=FALSE, include=FALSE}
 rm(list = ls())
 # OneDrive_dir <- "~/OneDrive - Inside MD Anderson/Box Sync/Genomic"
@@ -168,7 +170,11 @@ To see why we have been unable to map we can look at the Rsubread manual and rev
 
 We can see here that the problem is that we need to reduce the number of subreads required for accepting a hit. We can control this with the TH1 parameter which we now set ot 1.
 
+
+
+
 ```{r}
+library(Rsubread)
 myFQs <- paste0(data_dir,"/Sample_Het-1/Het-1_S7_L001_R1_001.fastq.gz")
 myMapped <- align("Addgene",myFQs,output_file = gsub(".fastq.gz",".bam",myFQs),
                   nthreads=4,unique=TRUE,nBestLocations=1,type = "DNA",TH1 = 1,
@@ -208,7 +214,7 @@ cigarRLE[1]
 Rsubread sgRNA aligned data
 And as our reads are all the same length we can now turn our list of RLEs into a matrix of cigar values with rows representing reads and columns the cycles acorss the reads.
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 cigarMat <- matrix(as.vector(unlist(cigarRLE)),ncol=50,byrow = TRUE)
 cigarMat[1:2,]
 ```
@@ -216,14 +222,14 @@ cigarMat[1:2,]
 Rsubread sgRNA aligned data
 From this we can now get the frequency of S or M using the table function.
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 cigarFreq <- apply(cigarMat,2,table)
 cigarFreq[1:2,]
 ```
 
 Rsubread sgRNA aligned data
 With this frequency table we can construct a ggplot to show the distibution of soft-clips and matches across the read.
-```{r}
+```{r eval=FALSE, include=FALSE}
 require(ggplot2)
 toPlot <- data.frame(Freq=c(cigarFreq["S",],cigarFreq["M",]),
                       Cigar=rep(c("S","M"),each=ncol(cigarFreq)),
@@ -233,14 +239,34 @@ ggplot(toPlot,aes(x=Cycle,y=Freq,colour=Cigar))+geom_line()+theme_bw()
 
 Rsubread counts per sgRNA
 To obtain the counts per sgRNA we can simply take the frequncy of contig occurrence.
+
+
 ```{r}
 counts <- data.frame(table(seqnames(temp)),row.names = "Var1")
 counts[1:2,,drop=FALSE]
 ```
 
 
-
 ############################################################################################################
 # save the file
 ############################################################################################################
+
+
 ```{r}
+write.csv(counts, file = paste0(result_dir, "/result", ".csv"), row.names = TRUE, col.names = TRUE)
+```
+
+
+
+# convert to markdown file to R script for batch processing
+```{r eval=FALSE, include=FALSE}
+knitr::purl("CrispRscreenAnalysis_V1_EI.Rmd")
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+dir('data', recursive=TRUE, full.names=TRUE, pattern = 'fastq')
+```
+
+
