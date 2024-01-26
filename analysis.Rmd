@@ -20,6 +20,8 @@ library(protools)
 # Load data
 ```{r}
 (df <- read.csv('data/results.csv', row.names =1))
+colnames(df) <- gsub('sample_', '', colnames(df))
+
 ```
 
 
@@ -43,8 +45,8 @@ pheatmap::pheatmap(log10(as.matrix(df_tc_norm) + 1), cluster_rows = FALSE, clust
 
 ## Calculate ratio of het vs wt
 ```{r}
-df_het <- df[paste0('sample_het_', 1:6)]
-df_wt <- df[paste0('sample_wt_', 1:6)]
+df_het <- df[paste0('het_', 1:6)]
+df_wt <- df[paste0('wt_', 1:6)]
 
 # min_df <- min(df_ratio_het_wt[sapply(df_ratio_het_wt, is.finite)])
 
@@ -56,6 +58,8 @@ df_ratio_het_wt <- df_het / (df_wt + 10-6)
 # df_ratio_het_wt[sapply(df_ratio_het_wt, is.infinite)] <- max_finite
 
 colnames(df_ratio_het_wt) <- paste0('ratio_het_vs_wt_sample_', 1:6)
+
+cbind(df, df_ratio_het_wt) %>% write.csv('data/results_with_ratio.csv')
 ```
 
 <!-- # ratio for normalized data -->
@@ -82,6 +86,10 @@ colnames(df_ratio_het_wt) <- paste0('ratio_het_vs_wt_sample_', 1:6)
 pheatmap::pheatmap(log10(as.matrix(df_ratio_het_wt) + 1), cluster_rows = FALSE, cluster_cols = FALSE, show_rownames = FALSE, show_colnames = TRUE,
                    angle_col = 315, fontsize_col = 8)
 ```
+
+
+
+
 
 ## trend of ratio across 6 oxidize phenotypes (without normalization)
 ```{r}
