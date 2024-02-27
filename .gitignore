@@ -5,3 +5,8 @@
 **/data/*
 output/*
 Addgene*
+report/*
+meeting/
+*.Rproj
+*.iml
+*.xml

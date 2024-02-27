@@ -1,0 +1,15 @@
+Script started on Tue Feb 20 22:54:32 2024
+command: src/python/MAGeCK-iNC_v5.2.py
+src/python/MAGeCK-iNC_v5.2.py: line 14: import: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 15: import: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 16: import: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 17: from: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 18: import: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 19: from: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 20: import: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 21: import: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 22: import: command not found
+src/python/MAGeCK-iNC_v5.2.py: line 24: syntax error near unexpected token `('
+src/python/MAGeCK-iNC_v5.2.py: line 24: `def execute(command):'
+
+Script done on Tue Feb 20 22:54:32 2024

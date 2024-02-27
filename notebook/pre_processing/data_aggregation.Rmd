@@ -1,0 +1,180 @@
+---
+title: "data_aggregation"
+author: "Chunhui Gu"
+date: "2024-01-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+library(tidyverse)
+library(janitor)
+```
+
+
+
+# 1. Load data
+```{r}
+samples <- dir('output', full.names=TRUE)
+length(samples)
+samples[1:5]
+```
+
+
+# combine segments for each sample
+```{r}
+combined_df <- NULL
+for (sample in samples) {
+  sampel_name <- basename(sample)
+  segments <- dir(sample, full.names=TRUE)
+  df <- NULL
+  for (segment in segments) {
+    df_segment <- read.csv(segment, row.names =1)
+    # browser()
+    # column bind segments together for each sample for later row sum
+    if (is.null(df)) {
+      df <- df_segment
+    } else {
+      df <- bind_cols(df, df_segment)
+    }
+  }
+  # for each sample the count of each gene is the sum of all segments
+  row_sums <- apply(df, 1, sum, na.rm=TRUE)
+  df <- as.data.frame(row_sums)
+  colnames(df) <- sampel_name
+  # column bind samples together to get the final df that each column is a sample and each row is a gene
+  if (is.null(combined_df)) {
+    combined_df <- df
+  } else {
+    combined_df <- bind_cols(combined_df, df)
+  }
+}
+print(combined_df)
+```
+```{r}
+tail(combined_df)
+```
+
+```{r}
+# Regular expression to match (e.g., row names containing 'apple')
+regex <- "negative"
+
+# Create a logical vector indicating whether each row name matches the regex
+matches <- grepl(regex, rownames(combined_df))
+
+# Split the dataframe into two parts
+df_match <- combined_df[matches, ]
+df_no_match <- combined_df[!matches, ]
+```
+
+
+# sgRNA for the same gene shouldn't summed (?)
+# Merge counts for genes with subscripts (_1, _2, _3, ..etc) except for neagtive_control
+```{r}
+# merged_df <- df_no_match  %>%
+#   rownames_to_column(var = "gene") %>%
+#   separate(gene, c("gene", "subscripts"), sep = "_") %>%
+#   dplyr::select(-subscripts) %>%
+#   group_by(gene) %>%
+#   summarise_all(sum) %>%
+#   column_to_rownames(var = "gene")
+
+merged_df <- df_no_match
+```
+
+
+add negative control back
+```{r}
+final_df <- rbind(df_match, merged_df)
+```
+
+
+```{r}
+tail(final_df)
+```
+
+
+```{r}
+(final_df <- janitor::clean_names(final_df))
+```
+
+
+
+```{r}
+# remove some duplicate ..?
+final_df <- final_df[!rownames(final_df) %in% c('ATF7', 'LRRC8A', 'MDGA2', 'POU6F1', 'PRND', 'RPL24'), ]
+```
+
+
+
+# median normalization
+```{r}
+median_normalization <- function(counts) {
+  
+  # Subset the dataframe to exclude zeros
+  df_no_zeros <- df[df != 0]
+  # Find the minimum value excluding zeros
+  min_value <- min(df_no_zeros, na.rm = TRUE)
+  
+  # Add the minimum value to the dataframe
+  counts <- counts + min_value
+  
+  # Calculate the geometric mean for each sgRNA across all experiments
+  geometric_means <- apply(counts, 1, function(x) exp(mean(log(x[x > 0]))))
+  
+  # Calculate the size factors for each experiment
+  size_factors <- apply(counts, 2, function(x) median(x / geometric_means))
+  
+  # Normalize the read counts using the size factors
+  normalized_counts <- sweep(counts, 2, size_factors, `/`)
+  normalized_counts_rounded <- round(normalized_counts)
+  
+  return(normalized_counts_rounded)
+}
+
+# Example usage:
+# Assuming 'counts' is a matrix or data frame with sgRNA read counts
+# where rows are sgRNAs and columns are experiments.
+# normalized_counts <- median_normalization(counts)
+
+```
+
+
+```{r}
+# final_df <- median_normalization(final_df)
+```
+
+
+```{r}
+write.csv(final_df, "data/results_without_aggregation.csv", row.names = TRUE)
+```
+
+```{r}
+# write.csv(final_df, "data/results.csv")
+```
+
+# check histogram
+```{r}
+barplot(colSums(final_df), main = "Number of reads in each sample", xlab = "Sample", ylab = "Number of reads", cex.names=.8)
+barplot(log10(colSums(final_df)), main = "Number of reads in each sample log10 scale", xlab = "Sample", 
+        ylab = "Number of reads log10", cex.names=.8)
+```
+
+
+
+```{r}
+
+```
+
+
+
+```{r}
+pheatmap::pheatmap(log2(as.matrix(final_df) + 1), cluster_rows = FALSE, cluster_cols = FALSE, show_rownames = FALSE, show_colnames = TRUE)
+```
+

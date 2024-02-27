@@ -1,0 +1,117 @@
+---
+title: "batch_processing_crispr"
+author: "Chunhui Gu"
+date: "2024-01-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(ShortRead)
+library(Rsubread)
+library(GenomicAlignments)
+library(ggplot2)
+library(gridExtra)
+```
+
+
+```{r}
+
+```
+
+
+
+# Quality check
+```{r}
+quality_check <- function(fastq_file, n_sample=10^6, log=TRUE, log_file="log/quality_check", log_append=TRUE){
+  # save log into a file
+  sink(log_file, append=log_append, split=TRUE)
+  
+  # concatenate to get the full path
+  file <- file.path('data', fastq_file)
+  fqSample <- FastqSampler(file,n=n_sample)
+  fastq <- yield(fqSample)
+  readSequences <- sread(fastq)
+  readQuality <- quality(fastq)
+  readQualities <- alphabetScore(readQuality)
+  toPlot <- data.frame(ReadQ=readQualities)
+  quality_score_hist <- ggplot(toPlot,aes(x=ReadQ))+geom_histogram()+theme_minimal()
+  
+  # plot TCGA by cycle
+  readSequences_AlpFreq <- alphabetFrequency(readSequences)
+  summed__AlpFreq  <- colSums(readSequences_AlpFreq)
+  summed__AlpFreq[c("A","C","G","T","N")]
+  readSequences_AlpbyCycle <- alphabetByCycle(readSequences)
+  
+  AFreq <- readSequences_AlpbyCycle["A",]
+  CFreq <- readSequences_AlpbyCycle["C",]
+  GFreq <- readSequences_AlpbyCycle["G",]
+  TFreq <- readSequences_AlpbyCycle["T",]
+  toPlot <- data.frame(Count=c(AFreq,CFreq,GFreq,TFreq),
+                       Cycle=rep(1:max(width(readSequences)),4),
+                       Base=rep(c("A","C","G","T"),each=max(width(readSequences))))
+  TCGA_count_by_cycle <- ggplot(toPlot,aes(y=Count,x=Cycle,colour=Base))+geom_line()+
+    theme_bw()
+  
+  # plot mean quality score
+  qualAsMatrix <- as(readQuality,"matrix")
+  Mean_Quality <- colMeans(qualAsMatrix)
+  # Create a data frame for ggplot
+  mean_quality_df <- data.frame(
+    Cycle = 1:length(Mean_Quality),
+    MeanQuality = Mean_Quality
+  )
+  # Create the ggplot
+  mean_quality_plot <- ggplot(mean_quality_df, aes(x = Cycle, y = MeanQuality)) +
+    geom_line() +
+    theme_minimal() +
+    labs(x = "Cycle", y = "Mean Quality Score", title = "Mean Quality Score by Cycle")
+  
+  # save the plots
+  report_path <- file.path('report', gsub(".fastq.gz","_report.pdf", fastq_file))
+  dir.create(dirname(report_path), recursive = TRUE)
+  ggsave(report_path, marrangeGrob(list(quality_score_hist, TCGA_count_by_cycle, mean_quality_plot), 
+                                   nrow = 2, ncol = 2, top = fastq_file))
+  # ggpubr::ggarrange(plotlist = list(quality_score_hist, TCGA_count_by_cycle, mean_quality_plot), nrow = 2, ncol = 2) 
+  
+  
+  myFQs <- file.path('data', fastq_file)
+  myMapped <- align("Addgene",myFQs,output_file = gsub(".fastq.gz",".bam",myFQs),
+                  nthreads=4,unique=TRUE,nBestLocations=1,type = "DNA",TH1 = 1,
+                  maxMismatches = 0,indels = 0)
+  if ((myMapped['Mapped_reads', 1] / myMapped['Total_reads', 1]) < 0.8) { # myMapped is a df with only 1 column
+    warning("Warning: less than 80% of reads mapped in", fastq_file, "\n")
+  }
+  
+  # get counts
+  temp <- readGAlignments(gsub(".fastq.gz",".bam",myFQs))
+  counts <- data.frame(table(seqnames(temp)),row.names = "Var1")
+  output_path <-  file.path('output', gsub(".fastq.gz", '.csv', fastq_file)) # get output path
+  dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
+  write.csv(counts, file = output_path, row.names = TRUE, col.names = TRUE)
+  
+  sink()
+}
+```
+
+```{r}
+# check function works
+quality_check('Sample_Het-1/Het-1_S7_L001_R1_001.fastq.gz')
+```
+
+
+
+
+```{r}
+files <- dir('data', recursive=TRUE, full.names=TRUE, pattern = 'fastq')
+files <- gsub("data/", "", files)
+for (file in files){
+  quality_check(file)
+}
+```
+

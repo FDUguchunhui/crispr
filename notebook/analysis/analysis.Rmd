@@ -1,0 +1,276 @@
+---
+title: "analysis"
+author: "Chunhui Gu"
+date: "2024-01-25"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(protools)
+```
+
+
+# Load data
+```{r}
+df <- read.csv('data/results.csv', row.names =1)
+colnames(df) <- gsub('sample_', '', colnames(df))
+head(df)
+
+
+barplot(colSums(df), main = "Number of reads in each sample", xlab = "Sample", ylab = "Number of reads", cex.names=.8)
+barplot(log10(colSums(df)), main = "Number of reads in each sample log10 scale", xlab = "Sample", 
+        ylab = "Number of reads log10", cex.names=.8)
+```
+
+
+## Heatmap without normalization
+```{r}
+is_negative <- grepl("negative", row.names(df), ignore.case = TRUE)
+# Create a dataframe with the categorization
+row_annot_df <- data.frame(
+  row.names = rownames(df),
+  'Gene type' = ifelse(is_negative, "negative control", "gene")
+)
+
+col_annot_df <- data.frame(
+  row.names = colnames(df),
+  'Sample type' = as.factor(ifelse(grepl("wt", colnames(df)), "HET", "WT"))
+)
+
+par(mfrow = c(1, 2))
+
+pheatmap::pheatmap(log10(as.matrix(df) + 1), 
+                   cluster_rows = FALSE, cluster_cols = FALSE, show_rownames = FALSE, show_colnames = TRUE,
+                   angle_col = 315, fontsize_col = 8,
+                   annotation_row = row_annot_df,
+                   annotation_col = col_annot_df,
+                   main = "Heatmap of log10(count + 1) for 6 oxidize phenotypes")
+
+
+pheatmap::pheatmap(log10(as.matrix(df[1:10000,]) + 1),
+                   cluster_rows = FALSE, cluster_cols = TRUE, show_rownames = FALSE, show_colnames = TRUE,
+                   angle_col = 315, fontsize_col = 8,
+                   annotation_row = row_annot_df,
+                   annotation_col = col_annot_df,
+                   main = "Heatmap of log10(count + 1) \n for 6 oxidize phenotypes")
+```
+
+
+
+```{r}
+# background <-  lapply(df[is_negative,], mean)
+# df[!is_negative, ] - background
+# 
+# pheatmap::pheatmap(log10(as.matrix(df[!is_negative, ] - background) + 1), 
+#                    cluster_rows = FALSE, cluster_cols = FALSE, show_rownames = FALSE, show_colnames = TRUE,
+#                    angle_col = 315, fontsize_col = 8,
+#                    annotation_row = row_annot_df,
+#                    annotation_col = col_annot_df,
+#                    main = "Heatmap of log10(count + 1) for 6 oxidize phenotypes")
+```
+
+
+
+## Heatmap with total count normalization
+https://support.proteomesoftware.com/hc/en-us/articles/115002739586-Spectrum-Count-Normalization-in-Scaffold
+
+No much difference between normalized and non-normalized. So I will use non-normalized data for further analysis.
+```{r}
+df_tc_norm <- protools::total_spectral_count_norm(df)
+colSums(df_tc_norm) # after normalization, the sum of each column is the same
+
+pheatmap::pheatmap(log10(as.matrix(df_tc_norm) + 1), 
+                   cluster_rows = FALSE, cluster_cols = FALSE, show_rownames = FALSE, show_colnames = TRUE,
+                   angle_col = 315, fontsize_col = 8,
+                   annotation_row = row_annot_df,
+                   annotation_col = col_annot_df,
+                   main="Heatmap of log10(count + 1) for 6 oxidize phenotypes with \n total count normalization"
+                   )
+
+
+pheatmap::pheatmap(log10(as.matrix(df_tc_norm) + 1), 
+                   cluster_rows = TRUE, cluster_cols = TRUE, show_rownames = FALSE, show_colnames = TRUE,
+                   angle_col = 315, fontsize_col = 8,
+                   annotation_row = row_annot_df,
+                   annotation_col = col_annot_df,
+                   main = "Heatmap of log10(count + 1) for 6 oxidize phenotypes with \n total count normalization")
+```
+
+## Use normalization for downstream analysis
+```{r}
+df <- df_tc_norm
+```
+
+
+
+## Calculate ratio of het vs wt
+```{r}
+df_het <- df[paste0('het_', 1:6)]
+df_wt <- df[paste0('wt_', 1:6)]
+
+# Subset the dataframe to exclude zeros
+df_no_zeros <- df[df != 0]
+# Find the minimum value excluding zeros
+min_value <- min(df_no_zeros, na.rm = TRUE)
+
+# ratio het/WT. Since some value is 0 in WT, so add a small value (minimum possible count value, 1) to avoid Inf
+df_ratio_het_wt <- df_het / (df_wt + min_value)
+
+# max_finite <- max(df_ratio_het_wt[sapply(df_ratio_het_wt, is.finite)])
+# 
+# # Replace Inf with the maximum finite value
+# df_ratio_het_wt[sapply(df_ratio_het_wt, is.infinite)] <- max_finite
+
+colnames(df_ratio_het_wt) <- paste0('ratio_het_vs_wt_sample_', 1:6)
+
+cbind(df, df_ratio_het_wt) %>% write.csv('data/results_with_ratio.csv')
+```
+
+<!-- # ratio for normalized data -->
+<!-- ```{r} -->
+<!-- df <- df_tc_norm -->
+<!-- df_het <- df[paste0('sample_het_', 1:6)] -->
+<!-- df_wt <- df[paste0('sample_wt_', 1:6)] -->
+
+<!-- # min_df <- min(df_ratio_het_wt[sapply(df_ratio_het_wt, is.finite)]) -->
+
+<!-- df_ratio_het_wt <- df_het / (df_wt + 10-6) -->
+
+<!-- # max_finite <- max(df_ratio_het_wt[sapply(df_ratio_het_wt, is.finite)]) -->
+<!-- #  -->
+<!-- # # Replace Inf with the maximum finite value -->
+<!-- # df_ratio_het_wt[sapply(df_ratio_het_wt, is.infinite)] <- max_finite -->
+
+<!-- colnames(df_ratio_het_wt) <- paste0('ratio_het_vs_wt_sample_', 1:6) -->
+<!-- ``` -->
+
+
+## Heatmap for ratio of het vs wt (without normalization)
+```{r}
+pheatmap::pheatmap(log10(as.matrix(df_ratio_het_wt) + 1), cluster_rows = FALSE, cluster_cols = FALSE, show_rownames = FALSE, show_colnames = TRUE,
+                   angle_col = 315, fontsize_col = 8,
+                   annotation_row = row_annot_df,
+                   main="Heatmap of ratio log10(count + 1) for 6 oxidize phenotypes HET vs WT")
+```
+
+
+
+
+
+<!-- ## trend of ratio across 6 oxidize phenotypes (without normalization) -->
+<!-- ```{r} -->
+<!-- sample_df <- log10(df_ratio_het_wt[sample(nrow(df_ratio_het_wt), 50), ] + 1) -->
+
+<!-- rownames_to_column(sample_df, var = "gene") %>% -->
+<!--   pivot_longer(cols = -gene, names_to = "sample", values_to = "ratio") %>% -->
+<!--   # ggplot(aes(x = factor(sample, paste0("ratio_het_vs_wt_sample_", c(4, 5, 1, 2, 6, 3))), y = ratio, group=gene, color=gene)) + -->
+<!--   ggplot(aes(x = sample, y = ratio, group=gene, color=gene)) + -->
+<!--   geom_line() +  -->
+<!--   theme_minimal() + -->
+<!--   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") + -->
+<!--   labs(title = "Trend of ratio across 6 oxidize phenotypes (50 genes randomly)", x = "paried sample", y = "log 10 count ratio")  -->
+<!-- ``` -->
+
+
+
+
+################################################################################################
+# pathway analysis
+```{r}
+library(gage)
+```
+
+
+```{r}
+# only keep regular genes
+df_wo_neg_ctrl <- df[!is_negative, ]
+
+ratio_wo_neg_ctrl <- df_ratio_het_wt[!is_negative,]
+degs_g6_up_reg <- rownames(ratio_wo_neg_ctrl)[ratio_wo_neg_ctrl["ratio_het_vs_wt_sample_6"] > 1000]
+length(degs_g6_up_reg)
+
+degs_g6_down_reg <- rownames(ratio_wo_neg_ctrl)[ratio_wo_neg_ctrl["ratio_het_vs_wt_sample_6"] < 0.000003]
+# length(degs_g6_down_reg)
+# degs_g6 <- c(degs_g6_up_reg, degs_g6_down_reg)
+
+degs_g6 <- c(degs_g6_up_reg)
+```
+
+# check pathway
+```{r}
+# BiocManager::install("clusterProfiler")
+# BiocManager::install("pathview")
+# BiocManager::install("enrichplot")
+library(clusterProfiler)
+library(enrichplot)
+# we use ggplot2 to add x axis labels (ex: ridgeplot)
+library(ggplot2)
+```
+
+
+
+```{r}
+# SET THE DESIRED ORGANISM HERE
+organism = "org.Mm.eg.db"
+# BiocManager::install(organism, character.only = TRUE)
+library(organism, character.only = TRUE)
+```
+
+
+```{r}
+keytypes(org.Mm.eg.db) # check available ID
+```
+
+
+```{r}
+GO_enrich <- enrichGO(gene=degs_g6, 
+             ont ="all", 
+             keyType = "SYMBOL", 
+             pvalueCutoff = 0.05,
+             OrgDb = organism, 
+             pAdjustMethod = "BH")
+
+AnnotationDbi::select(org.Mm.eg.db, 
+       keys = degs_g6,
+       columns = c("ENTREZID", "SYMBOL"),
+       keytype = "SYMBOL")
+
+entrez_genes <- as.character(mapIds(org.Mm.eg.db, degs_g6, column = 'ENTREZID', keytype = 'SYMBOL'))
+KEGG_enrich <- enrichKEGG(gene=entrez_genes,
+               pvalueCutoff = 0.05,
+               organism='mmu',
+               pAdjustMethod = "BH")
+```
+
+
+# retrieve DEGs dataframe
+```{r}
+(res_df <- as.data.frame(GO_enrich))
+write.csv(res_df, file='data/GO_pathway_analysis.csv')
+
+(res_df_KEGG <- as.data.frame(KEGG_enrich))
+write.csv(res_df_KEGG, file='data/KEGG_pathway_analysis.csv')
+```
+
+
+
+```{r}
+# BiocManager::install('DOSE')
+library(DOSE)
+dotplot(GO_enrich, showCategory=20, font.size = 8)
+dotplot(KEGG_enrich, showCategory=20, font.size = 8)
+```
+```{r}
+x2 <- pairwise_termsim(GO_enrich) 
+emapplot(x2, showCategory = 10) + theme(text = element_text(size = 100))
+```
+

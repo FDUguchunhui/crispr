@@ -1,0 +1,272 @@
+---
+title: "CrispR screen analysis"
+subtitle: "using R and Bioconductor packages, Rsubread"
+author: "Ehsan Irajizad"
+output:
+  html_document:
+    df_print: paged
+date: "01-10-2024"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, error = FALSE, message = FALSE)
+```
+
+
+
+
+```{r eval=FALSE, include=FALSE}
+rm(list = ls())
+# OneDrive_dir <- "~/OneDrive - Inside MD Anderson/Box Sync/Genomic"
+# change main directory
+# OneDrive_dir <- "/Users/cgu3/Documents/Crisp"
+# Functions_dir <- paste0(OneDrive_dir,"/My_R_functions")
+# project_dir <- paste0(OneDrive_dir,"/FarhadDanesh/CRISPR/CRISPR_screen_KidneyGene_Jan2024")
+# result_dir <- paste0(project_dir,"/output")
+# data_dir <- paste0(project_dir,"/data")
+# main_dir <- paste0(project_dir,"/script/Subread")
+# setwd(main_dir)
+```
+
+# Manually run the code above to use the old working directory structure
+```{r}
+# install.packages("here")
+library(here)
+setwd(here())
+data_dir <- paste0(getwd(), '/data')
+project_dir <- getwd()
+result_dir <- paste0(getwd(),"/output")
+```
+
+
+
+# Quality control of FastQ
+
+Here we use the FastqSampler and yield function to randomly sample a defined number of reads from a fastQ file. Here we subsample 1 million reads.
+
+
+```{r eval=FALSE, include=FALSE}
+# try if you have problem with install ShortRead
+install.packages("BiocManager")
+Bioconductor::install("ShortRead")
+```
+
+
+```{r}
+library(ShortRead)
+fqSample <- FastqSampler(paste0(data_dir,"/Sample_Het-1/Het-1_S7_L001_R1_001.fastq.gz"),n=10^6)
+fastq <- yield(fqSample)
+readSequences <- sread(fastq)
+readQuality <- quality(fastq)
+readIDs <- id(fastq)
+readSequences
+```
+
+We use the alphabetScore() function with our read’s qualitys to retrieve the sum quality for every read from our subsample.
+
+```{r}
+readQuality <- quality(fastq)
+readQualities <- alphabetScore(readQuality)
+readQualities[1:10]
+```
+
+We can then produce a histogram of quality scores to get a better understanding of the distribution of scores.
+
+```{r}
+library(ggplot2)
+toPlot <- data.frame(ReadQ=readQualities)
+ggplot(toPlot,aes(x=ReadQ))+geom_histogram()+theme_minimal()
+```
+
+We can review the occurrence of DNA bases within reads and well as the occurrence of DNA bases across sequencing cycles using the alphabetFrequency() and alphabetByCycle() functions respectively.
+
+Here we check the overall frequency of A, G, C, T and N (unknown bases) in our sequence reads.
+
+```{r}
+readSequences <- sread(fastq)
+readSequences_AlpFreq <- alphabetFrequency(readSequences)
+readSequences_AlpFreq[1:3,]
+```
+
+Once we have the frequency of DNA bases in our sequence reads we can retrieve the sum across all reads.
+
+```{r}
+summed__AlpFreq  <- colSums(readSequences_AlpFreq)
+summed__AlpFreq[c("A","C","G","T","N")]
+```
+
+We can review DNA base occurrence by cycle using the alphabetByCycle() function.
+
+```{r}
+readSequences_AlpbyCycle <- alphabetByCycle(readSequences)
+readSequences_AlpbyCycle[1:4,1:10]
+```
+
+We often plot this to visualise the base occurrence over cycles to observe any bias. First we arrange the base frequency into a data frame.
+
+```{r}
+AFreq <- readSequences_AlpbyCycle["A",]
+CFreq <- readSequences_AlpbyCycle["C",]
+GFreq <- readSequences_AlpbyCycle["G",]
+TFreq <- readSequences_AlpbyCycle["T",]
+toPlot <- data.frame(Count=c(AFreq,CFreq,GFreq,TFreq),
+                     Cycle=rep(1:max(width(readSequences)),4),
+                     Base=rep(c("A","C","G","T"),each=max(width(readSequences))))
+ggplot(toPlot,aes(y=Count,x=Cycle,colour=Base))+geom_line()+
+  theme_bw()
+```
+
+We can also assess mean read quality over cycles. This will allow us to identify whether there are any isses with quality dropping off over time.
+
+For this we use the as(read_quality,“matrix”) function first to translate our ASCI quality scores to numeric quality scores.
+
+```{r}
+qualAsMatrix <- as(readQuality,"matrix")
+Mean_Quality <- colMeans(qualAsMatrix)
+plot(Mean_Quality)
+```
+
+# Aligning reads to sgRNA library
+
+First we need to retrieve the sequence information for the sgRNA guides of interest in FASTA format
+
+```{r eval=FALSE, include=FALSE}
+Addgene <- read.delim(paste0(project_dir,"/library/gRNA-1-5_sequence.txt"), sep = "",header = FALSE)
+Addgene[1:3,]
+## 899 were duplicated and I had to remove the duplicate/ 
+Addgene <- Addgene[!duplicated(Addgene$V3),]
+Addgene <- Addgene[!duplicated(Addgene$V2),]
+sum(duplicated(Addgene$V3))
+sum(duplicated(Addgene$V2))
+```
+
+Warning: there were 899 genes with similar name and sequence. I had to remove them. 5036 had similar name, had to remove them
+## Creating a sgRNA fasta
+
+Now we can create a DNAStringSet object from the retrieved sequences as we have done for full chromosome sequences.
+
+```{r eval=FALSE, include=FALSE}
+require(Biostrings)
+sgRNAs <- DNAStringSet(Addgene$V3)
+names(sgRNAs) <- Addgene$V2
+writeXStringSet(sgRNAs,file=paste0(project_dir,"/library/Addgene_removeduplicated_Eh.fa"))
+```
+
+## Creating an Rsubread index (run it to create index if you don't have it or it is the first time you run the code)
+```{r eval=FALSE, include=FALSE}
+# BiocManager::install("Rsubread")
+library(Rsubread)
+buildindex("Addgene",paste0(project_dir,"/library/Addgene_removeduplicated_Eh.fa"),
+           indexSplit=FALSE)
+```
+
+## Rsubread sgRNA alignment
+
+We can align our raw sequence data in fastQ format to the new FASTA file of sgRNA sequences using the Rsubread package. Specifically we will be using the align function as this utilizes the subread genomic alignment algorithm.
+
+The align() function accepts arguments for the index to align to, the fastQ to align, the name of output BAM, the mode of alignment (rna or dna) and the phredOffset.
+
+To see why we have been unable to map we can look at the Rsubread manual and review the guide for mapping to miRNAs..
+
+We can see here that the problem is that we need to reduce the number of subreads required for accepting a hit. We can control this with the TH1 parameter which we now set ot 1.
+
+
+
+
+```{r}
+library(Rsubread)
+myFQs <- paste0(data_dir,"/Sample_Het-1/Het-1_S7_L001_R1_001.fastq.gz")
+myMapped <- align("Addgene",myFQs,output_file = gsub(".fastq.gz",".bam",myFQs),
+                  nthreads=4,unique=TRUE,nBestLocations=1,type = "DNA",TH1 = 1,
+                  maxMismatches = 0,indels = 0)
+```
+
+We can now assess how well our alignment has done by reviewing the total number of mapped reads output by the align function.
+
+```{r}
+myMapped
+```
+
+Rsubread sgRNA aligned data
+We can use the GenoomicAlignments package to read in our newly created BAM file using the readGAlignments function
+
+```{r}
+require(GenomicAlignments)
+temp <- readGAlignments(gsub(".fastq.gz",".bam",myFQs))
+temp
+```
+
+Rsubread sgRNA aligned data
+We can then review where the softclipping and matches occur in our read by interrogating these cigar strings using the cigar functions to extract them from our GAlignements object.
+
+```{r}
+cigars <- cigar(temp)
+cigars[1:5]
+```
+
+Rsubread sgRNA aligned data
+We can use the cigarToRleList function to turn our cigar strings into a list of RLE objects.
+```{r}
+cigarRLE <- cigarToRleList(cigars)
+cigarRLE[1]
+```
+
+Rsubread sgRNA aligned data
+And as our reads are all the same length we can now turn our list of RLEs into a matrix of cigar values with rows representing reads and columns the cycles acorss the reads.
+
+```{r eval=FALSE, include=FALSE}
+cigarMat <- matrix(as.vector(unlist(cigarRLE)),ncol=50,byrow = TRUE)
+cigarMat[1:2,]
+```
+
+Rsubread sgRNA aligned data
+From this we can now get the frequency of S or M using the table function.
+
+```{r eval=FALSE, include=FALSE}
+cigarFreq <- apply(cigarMat,2,table)
+cigarFreq[1:2,]
+```
+
+Rsubread sgRNA aligned data
+With this frequency table we can construct a ggplot to show the distibution of soft-clips and matches across the read.
+```{r eval=FALSE, include=FALSE}
+require(ggplot2)
+toPlot <- data.frame(Freq=c(cigarFreq["S",],cigarFreq["M",]),
+                      Cigar=rep(c("S","M"),each=ncol(cigarFreq)),
+                      Cycle=rep(seq(1,ncol(cigarFreq)),2))
+ggplot(toPlot,aes(x=Cycle,y=Freq,colour=Cigar))+geom_line()+theme_bw()
+```
+
+Rsubread counts per sgRNA
+To obtain the counts per sgRNA we can simply take the frequncy of contig occurrence.
+
+
+```{r}
+counts <- data.frame(table(seqnames(temp)),row.names = "Var1")
+counts[1:2,,drop=FALSE]
+```
+
+
+############################################################################################################
+# save the file
+############################################################################################################
+
+
+```{r}
+write.csv(counts, file = paste0(result_dir, "/result", ".csv"), row.names = TRUE, col.names = TRUE)
+```
+
+
+
+# convert to markdown file to R script for batch processing
+```{r eval=FALSE, include=FALSE}
+knitr::purl("CrispRscreenAnalysis_V1_EI.Rmd")
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+dir('data', recursive=TRUE, full.names=TRUE, pattern = 'fastq')
+```
+
+
