@@ -61,7 +61,7 @@ def rank_test(df):
         ntc_selected_p = [i[0] for i in ntc_selected]
         ntc_lfc = np.mean([i[1] for i in sorted(ntc_selected, key=lambda x: x[0])][:5])
         x, ntc_pvalue = mannwhitneyu(ntc_selected_p, ntc_sgRNA_p, alternative='two-sided')
-        gene_lfc_p['NTC_' + str(j)] = [ntc_lfc, ntc_pvalue]
+        gene_lfc_p['NTC' + str(j)] = [ntc_lfc, ntc_pvalue]
     return gene_lfc_p
 
 
@@ -75,11 +75,11 @@ if __name__ == "__main__":
     parser.add_argument("--counts_file", type=str, required=True, help="Path to the counts file.")
     parser.add_argument("--control_group", type=str, nargs='+', required=True,
                         help="Control group label(s), separated by commas if more than one.")
-    parser.add_argument("--counts_thres_control", type=float, required=True,
+    parser.add_argument("--counts_thres_control", type=float, default=-1,
                         help="Counts threshold that needed to be greater than for a sgRNA to keep control groups.")
     parser.add_argument("--treatment_group", type=str, nargs='+', required=True,
                         help="Treatment group label(s), separated by commas if more than one.")
-    parser.add_argument("--counts_thres_treatment", type=float, required=True,
+    parser.add_argument("--counts_thres_treatment", type=float, default=-1,
                         help="Counts threshold for treatment groups.")
     parser.add_argument("--negative_control_keyword", type=str, required=True, help="sgRNA(s) contain the keyword "
                                                                                     "will be considered as negative control")
@@ -123,11 +123,11 @@ if __name__ == "__main__":
     execute("mageck test -k " + output_folder + '/%s_thresholded_counts.txt' % output_name + " -t " +
             ','.join(treatment_groups) + " -c " + ','.join(control_groups) +
             " -n " + output_folder + "/" + output_name +
-            " --pdf-report --norm-method control --control-sgrna " + args.control_sgrna)
+            " --pdf-report --norm-method none")
     # execute("mageck test -k " + output_folder + '/%s_thresholded_counts.txt' % output_name + " -t " +
     #         ','.join(treatment_groups) + " -c " + ','.join(control_groups) +
     #         " -n " + output_folder + "/" + output_name +
-    #         " --pdf-report")
+    #         " --pdf-report --norm-method none")
     print("running u test.....")
     # u test
     df_mageck = pd.read_table(output_folder + "/" + output_name + '.sgrna_summary.txt')
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     df.reset_index(inplace=True)
     df['gene'] = df['index'].apply(lambda x: x.split('_')[0])
     df['epsilon'] = -df['epsilon']
-    df_ntc = df[df['gene'] == args.negative_control_keyword]
+    df_ntc = df[df['gene'].str.contains('NTC')]
     df['epsilon'] = df['epsilon'] - df_ntc['epsilon'].median()
     df['product'] = df['epsilon'] * (-np.log10(df['pvalue']))
     df.sort_values('product', ascending=False)
