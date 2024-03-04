@@ -31,9 +31,9 @@ def execute(command):
 
 def product_threshold_fdr(df, fdr=0.05):
     maxi = abs(df['product']).max()
-    for pro in np.arange(0, maxi, 0.1):
+    for pro in np.arange(0, maxi, 0.01):
         df_thres = df[abs(df['product']) > pro]
-        if (1.0 * len(df_thres[df_thres['index'].str.contains(args.negative_control_keyword)]) / len(df_thres)) < fdr:
+        if (1.0 * len(df_thres[df_thres['index'].str.contains('NTC')]) / len(df_thres)) < fdr:
             break
     return pro, df_thres
 
@@ -123,6 +123,7 @@ if __name__ == "__main__":
     execute("mageck test -k " + output_folder + '/%s_thresholded_counts.txt' % output_name + " -t " +
             ','.join(treatment_groups) + " -c " + ','.join(control_groups) +
             " -n " + output_folder + "/" + output_name +
+            # " --control-sgrna " + args.control_sgrna +
             " --pdf-report --norm-method none")
     # execute("mageck test -k " + output_folder + '/%s_thresholded_counts.txt' % output_name + " -t " +
     #         ','.join(treatment_groups) + " -c " + ','.join(control_groups) +
@@ -146,7 +147,7 @@ if __name__ == "__main__":
     df.sort_values('product', ascending=False).to_csv(output_folder + '/' + output_name + '_all_genes.csv', index=False)
     df_hits.sort_values('product', ascending=False).to_csv(
         output_folder + '/' + output_name + '_fdr%s_product%s_hits.csv' % (fdr, thres), index=False)
-    df_ntc = df[df['index'].str.contains(args.negative_control_keyword)]
+    df_ntc = df[df['index'].str.contains('NTC')]
 
     ########### volcano plot
     if make_plot == 1:
