@@ -31,7 +31,7 @@ def execute(command):
 
 def product_threshold_fdr(df, fdr=0.05):
     maxi = abs(df['product']).max()
-    for pro in np.arange(0, maxi, 0.01):
+    for pro in np.arange(0, maxi, 0.1):
         df_thres = df[abs(df['product']) > pro]
         if (1.0 * len(df_thres[df_thres['index'].str.contains('NTC')]) / len(df_thres)) < fdr:
             break
@@ -42,6 +42,9 @@ def rank_test(df):
     df = df[df['treat_mean'] > 20] # only keep sgRNAs with mean read counts > threshold
     df_ntc = df[df['Gene'].str.contains(args.negative_control_keyword)]
     df_targeting = df[~df['Gene'].str.contains(args.negative_control_keyword)]
+     # only keep genes with at least 3 sgRNAs
+    # df_targeting = df_targeting.groupby('Gene').filter(lambda x: len(x) > 2)
+
     ntc_sgRNA_p = list(df_ntc['p.twosided'])
     ntc_sgRNA_p_lfc = zip(list(df_ntc['p.twosided']), list(df_ntc['LFC']))
     genes = df_targeting['Gene'].unique()
@@ -60,7 +63,7 @@ def rank_test(df):
         ntc_selected = ntc_sgRNA_p_lfc[:5]
         ntc_selected_p = [i[0] for i in ntc_selected]
         ntc_lfc = np.mean([i[1] for i in sorted(ntc_selected, key=lambda x: x[0])][:5])
-        x, ntc_pvalue = mannwhitneyu(ntc_selected_p, ntc_sgRNA_p, alternative='two-sided')
+        x, ntc_pvalue = mannwhitneyu(ntc_selected_p, ntc_sgRNA_p, alternative='two-sided', method='asymptotic')
         gene_lfc_p['NTC' + str(j)] = [ntc_lfc, ntc_pvalue]
     return gene_lfc_p
 
